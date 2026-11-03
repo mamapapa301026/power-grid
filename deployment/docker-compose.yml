@@ -1,0 +1,109 @@
+services:
+  database:
+    image: mariadb:11.4
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      MARIADB_DATABASE: powergrid_monitor
+      MARIADB_USER: powergrid
+      MARIADB_PASSWORD: ${MARIADB_APP_PASSWORD:?Set MARIADB_APP_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../database/powergrid_monitor.sql:/docker-entrypoint-initdb.d/001_powergrid_monitor.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    networks: [edge, internal]
+    environment:
+      PORT: 3000
+      API_HOST: 0.0.0.0
+      TRUST_PROXY: "true"
+      CORS_ORIGIN: ${SITE_ORIGIN:-https://192.168.1.20}
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: powergrid_monitor
+      DB_USER: powergrid
+      DB_PASSWORD: ${MARIADB_APP_PASSWORD:?Set MARIADB_APP_PASSWORD in .env}
+      DEMO_MODE: ${DEMO_MODE:-false}
+      SIMULATOR_TOKEN: ${SIMULATOR_TOKEN:?Set SIMULATOR_TOKEN in .env}
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  simulator:
+    build:
+      context: ../simulator
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      API_URL: http://backend:3000/api/v1/telemetry
+      SIMULATOR_TOKEN: ${SIMULATOR_TOKEN:?Set SIMULATOR_TOKEN in .env}
+      INTERVAL_MS: 5000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+    restart: unless-stopped
+    networks: [edge]
+    ports:
+      - "${SITE_BIND_IP:-192.168.1.20}:443:443"
+    volumes:
+      - ./nginx/production.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./tls:/etc/nginx/tls:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -q --spider https://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  backup:
+    image: mariadb:11.4
+    restart: unless-stopped
+    networks: [internal]
+    environment:
+      MYSQL_PWD: ${MARIADB_APP_PASSWORD:?Set MARIADB_APP_PASSWORD in .env}
+      MYSQL_USER: powergrid
+      MYSQL_DATABASE: powergrid_monitor
+    volumes:
+      - mysql-backups:/backups
+    depends_on:
+      database:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      set -eu;
+      while true; do
+        file="/backups/powergrid-$$(date -u +%Y%m%dT%H%M%SZ).sql";
+        mariadb-dump -h database -u "$$MYSQL_USER" "$$MYSQL_DATABASE" > "$$file";
+        gzip "$$file";
+        find /backups -type f -name '*.sql.gz' -mtime +7 -delete;
+        sleep 86400;
+      done
+
+volumes:
+  mysql-data:
+  mysql-backups:
+
+networks:
+  edge:
+  internal:
+    internal: true
