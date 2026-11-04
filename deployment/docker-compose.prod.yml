@@ -6,7 +6,7 @@ services:
 
   frontend:
     ports:
-      - "${SITE_BIND_IP:-192.168.1.20}:443:443"
+      - "${SITE_BIND_IP:-192.168.174.137}:443:443"
     volumes:
       - ./nginx/production.conf:/etc/nginx/conf.d/default.conf:ro
       - ./tls:/etc/nginx/tls:ro
