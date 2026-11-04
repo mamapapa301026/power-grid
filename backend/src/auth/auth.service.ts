@@ -304,7 +304,7 @@ export class AuthService implements OnModuleInit {
       username: user.username,
       displayName: user.displayName,
       roles: [user.role],
-      substationIds: ['*'],
+      substationIds: user.role === 'customer' ? [] : ['*'],
     }
   }
 

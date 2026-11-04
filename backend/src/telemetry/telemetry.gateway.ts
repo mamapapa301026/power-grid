@@ -10,6 +10,8 @@ import { AuthPrincipal } from '../auth/auth.types'
 import { getAllowedOrigins } from '../security/cors'
 import type { TelemetrySample } from './telemetry.service'
 
+const telemetryRoles = ['operator', 'engineer', 'administrator']
+
 @WebSocketGateway({
   namespace: '/telemetry',
   cors: { origin: getAllowedOrigins() },
@@ -25,6 +27,10 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
       const token = socket.handshake.auth?.token
       this.auth.authenticate(typeof token === 'string' ? token : undefined)
         .then((principal) => {
+          if (!principal.roles.some((role) => telemetryRoles.includes(role))) {
+            next(new Error('Forbidden'))
+            return
+          }
           socket.data.user = principal
           next()
         })
