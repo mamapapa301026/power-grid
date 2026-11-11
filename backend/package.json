@@ -11,7 +11,7 @@
     "@nestjs/common": "^12.3.2",
     "@nestjs/core": "^12.3.2",
     "@nestjs/platform-express": "^12.3.2",
-    "@nestjs/platform-socket.io": "^12.3.2",
+    "@nestjs/platform-socket.io": "^12.4.0",
     "@nestjs/throttler": "^6.7.1",
     "@nestjs/websockets": "^12.3.2",
     "class-transformer": "^0.5.1",
